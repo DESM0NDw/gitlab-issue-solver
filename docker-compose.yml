@@ -1,0 +1,17 @@
+services:
+  solver:
+    build: .
+    container_name: gitlab-issue-solver
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - repos:/repos
+    networks:
+      - 1panel-network
+
+volumes:
+  repos:
+
+networks:
+  1panel-network:
+    external: true

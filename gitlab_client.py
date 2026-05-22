@@ -59,5 +59,6 @@ async def set_label(project_id: str | int, issue_iid: int, label: str) -> None:
 
 
 def repo_clone_url(project: dict) -> str:
-    url = project["http_url_to_repo"]
+    # API response uses http_url_to_repo, webhook payload uses git_http_url or http_url
+    url = project.get("http_url_to_repo") or project.get("git_http_url") or project["http_url"]
     return url.replace("https://", f"https://oauth2:{settings.gitlab_token}@")

@@ -62,10 +62,12 @@ async def webhook(request: Request, x_gitlab_token: str | None = Header(None)):
     if attrs.get("action") not in ("open", "update"):
         return {"status": "ignored"}
 
-    # Nur wenn bot::prio-gesetzt Label gerade gesetzt wurde
+    # Nur wenn bot::prio-gesetzt gerade NEU hinzugefügt wurde
     changes = payload.get("changes", {})
-    added_labels = {lbl["title"] for lbl in changes.get("labels", {}).get("current", [])}
-    if "bot::prio-gesetzt" not in added_labels:
+    label_changes = changes.get("labels", {})
+    previous = {lbl["title"] for lbl in label_changes.get("previous", [])}
+    current = {lbl["title"] for lbl in label_changes.get("current", [])}
+    if "bot::prio-gesetzt" not in (current - previous):
         return {"status": "ignored"}
 
     project = payload["project"]

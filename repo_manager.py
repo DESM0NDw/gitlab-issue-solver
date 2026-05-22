@@ -18,13 +18,13 @@ async def _git(*args, cwd: Path) -> None:
         raise RuntimeError(f"git {' '.join(args)} failed: {stderr.decode()}")
 
 
-async def ensure_repo(project_id: str | int, clone_url: str) -> Path:
+async def ensure_repo(project_id: str | int, clone_url: str, default_branch: str = "main") -> Path:
     repo_path = Path(settings.repos_base_path) / str(project_id)
 
     if repo_path.exists():
         log.info(f"Repo {project_id}: fetch + reset")
         await _git("fetch", "--prune", cwd=repo_path)
-        await _git("reset", "--hard", "origin/HEAD", cwd=repo_path)
+        await _git("reset", "--hard", f"origin/{default_branch}", cwd=repo_path)
     else:
         log.info(f"Repo {project_id}: initial clone")
         repo_path.parent.mkdir(parents=True, exist_ok=True)

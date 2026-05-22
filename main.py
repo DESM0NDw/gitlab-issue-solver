@@ -21,7 +21,7 @@ def _verify_secret(token: str | None) -> None:
         raise HTTPException(status_code=401, detail="Ungültiges Webhook-Secret")
 
 
-async def _process(project_id: str | int, issue_iid: int, clone_url: str) -> dict:
+async def _process(project_id: str | int, issue_iid: int, clone_url: str, default_branch: str = "main") -> dict:
     issue = await fetch_issue(project_id, issue_iid)
 
     existing = set(issue.get("labels", []))
@@ -32,7 +32,7 @@ async def _process(project_id: str | int, issue_iid: int, clone_url: str) -> dic
 
     comments = await fetch_issue_comments(project_id, issue_iid)
 
-    repo_path = await ensure_repo(project_id, clone_url)
+    repo_path = await ensure_repo(project_id, clone_url, default_branch)
     log.info(f"Starte Solver für Issue #{issue_iid}")
 
     result = await run_solver(issue, comments, repo_path)
@@ -70,9 +70,10 @@ async def webhook(request: Request, x_gitlab_token: str | None = Header(None)):
 
     project = payload["project"]
     clone_url = repo_clone_url(project)
+    default_branch = project.get("default_branch", "main")
 
     try:
-        return await _process(project["id"], attrs["iid"], clone_url)
+        return await _process(project["id"], attrs["iid"], clone_url, default_branch)
     except Exception as e:
         log.error(f"Solver fehlgeschlagen für Issue #{attrs['iid']}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -82,8 +83,9 @@ async def webhook(request: Request, x_gitlab_token: str | None = Header(None)):
 async def solve(project_id: str, issue_iid: int):
     project = await fetch_project(project_id)
     clone_url = repo_clone_url(project)
+    default_branch = project.get("default_branch", "main")
     try:
-        return await _process(project_id, issue_iid, clone_url)
+        return await _process(project_id, issue_iid, clone_url, default_branch)
     except Exception as e:
         log.error(f"Solver fehlgeschlagen: {e}")
         raise HTTPException(status_code=500, detail=str(e))

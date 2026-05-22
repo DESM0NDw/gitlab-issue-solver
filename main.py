@@ -1,6 +1,7 @@
 import asyncio
 import hmac
 import logging
+import httpx
 from fastapi import FastAPI, Request, HTTPException, Header
 from gitlab_client import fetch_project, fetch_issue, fetch_issue_comments, post_comment, set_label, repo_clone_url
 from repo_manager import ensure_repo
@@ -44,8 +45,8 @@ async def _process(project_id: str | int, issue_iid: int, clone_url: str, defaul
         try:
             result = await run_solver(issue, comments, repo_path)
             break
-        except Exception as e:
-            if "tool_use_failed" in str(e) and attempt < 2:
+        except httpx.HTTPStatusError as e:
+            if "tool_use_failed" in e.response.text and attempt < 2:
                 log.warning(f"Tool-Call Format-Fehler, Retry {attempt + 1}/3")
                 continue
             raise

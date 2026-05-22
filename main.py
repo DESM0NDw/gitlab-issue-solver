@@ -1,3 +1,4 @@
+import asyncio
 import hmac
 import logging
 from fastapi import FastAPI, Request, HTTPException, Header
@@ -12,6 +13,8 @@ log = logging.getLogger(__name__)
 app = FastAPI(title="GitLab Issue Solver")
 
 SKIP_LABELS = {"bot::lösungsvorschlag", "bot::prioritätsliste"}
+
+_queue: asyncio.Queue = asyncio.Queue()
 
 
 def _verify_secret(token: str | None) -> None:
@@ -29,9 +32,10 @@ async def _process(project_id: str | int, issue_iid: int, clone_url: str, defaul
         return {"status": "ignored", "reason": "already solved"}
     if SKIP_LABELS & existing:
         return {"status": "ignored", "reason": "skip label"}
+    if "type::bug" not in existing:
+        return {"status": "ignored", "reason": "not a bug"}
 
     comments = await fetch_issue_comments(project_id, issue_iid)
-
     repo_path = await ensure_repo(project_id, clone_url, default_branch)
     log.info(f"Starte Solver für Issue #{issue_iid}")
 
@@ -49,6 +53,24 @@ async def _process(project_id: str | int, issue_iid: int, clone_url: str, defaul
     return {"status": "ok"}
 
 
+async def _worker() -> None:
+    while True:
+        project_id, issue_iid, clone_url, default_branch = await _queue.get()
+        log.info(f"Queue: verarbeite Issue #{issue_iid} ({_queue.qsize()} verbleibend)")
+        try:
+            await _process(project_id, issue_iid, clone_url, default_branch)
+        except Exception as e:
+            log.error(f"Queue-Worker Fehler bei Issue #{issue_iid}: {e}")
+        finally:
+            _queue.task_done()
+
+
+@app.on_event("startup")
+async def startup():
+    asyncio.create_task(_worker())
+    log.info("Solver-Queue gestartet")
+
+
 @app.post("/webhook")
 async def webhook(request: Request, x_gitlab_token: str | None = Header(None)):
     _verify_secret(x_gitlab_token)
@@ -62,23 +84,24 @@ async def webhook(request: Request, x_gitlab_token: str | None = Header(None)):
     if attrs.get("action") not in ("open", "update"):
         return {"status": "ignored"}
 
-    # Nur wenn bot::prio-gesetzt gerade NEU hinzugefügt wurde
     changes = payload.get("changes", {})
     label_changes = changes.get("labels", {})
     previous = {lbl["title"] for lbl in label_changes.get("previous", [])}
     current = {lbl["title"] for lbl in label_changes.get("current", [])}
+
     if "bot::prio-gesetzt" not in (current - previous):
+        return {"status": "ignored"}
+
+    if "type::bug" not in current:
         return {"status": "ignored"}
 
     project = payload["project"]
     clone_url = repo_clone_url(project)
     default_branch = project.get("default_branch", "main")
 
-    try:
-        return await _process(project["id"], attrs["iid"], clone_url, default_branch)
-    except Exception as e:
-        log.error(f"Solver fehlgeschlagen für Issue #{attrs['iid']}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    await _queue.put((project["id"], attrs["iid"], clone_url, default_branch))
+    log.info(f"Issue #{attrs['iid']} in Queue ({_queue.qsize()} gesamt)")
+    return {"status": "queued"}
 
 
 @app.post("/solve")
@@ -95,4 +118,4 @@ async def solve(project_id: str, issue_iid: int):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "queue_size": _queue.qsize()}

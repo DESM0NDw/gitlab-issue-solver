@@ -39,7 +39,18 @@ async def _process(project_id: str | int, issue_iid: int, clone_url: str, defaul
     repo_path = await ensure_repo(project_id, clone_url, default_branch)
     log.info(f"Starte Solver für Issue #{issue_iid}")
 
-    result = await run_solver(issue, comments, repo_path)
+    result = None
+    for attempt in range(3):
+        try:
+            result = await run_solver(issue, comments, repo_path)
+            break
+        except Exception as e:
+            if "tool_use_failed" in str(e) and attempt < 2:
+                log.warning(f"Tool-Call Format-Fehler, Retry {attempt + 1}/3")
+                continue
+            raise
+    if result is None:
+        raise RuntimeError("Solver nach 3 Versuchen fehlgeschlagen")
 
     comment = (
         f"**KI-Lösungsvorschlag**\n\n"

@@ -175,6 +175,8 @@ async def run_solver(issue: dict, comments: list[dict], repo_path: Path) -> str:
                     "tool_choice": "auto",
                 },
             )
+            if not response.is_success:
+                log.error(f"Groq Fehler {response.status_code}: {response.text}")
             response.raise_for_status()
             data = response.json()
 

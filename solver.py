@@ -179,6 +179,8 @@ async def run_solver(issue: dict, comments: list[dict], repo_path: Path) -> str:
             data = response.json()
 
             msg = data["choices"][0]["message"]
+            if msg.get("content") is None:
+                msg = {k: v for k, v in msg.items() if k != "content"}
             messages.append(msg)
 
             tool_calls = msg.get("tool_calls")
